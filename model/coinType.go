@@ -47,7 +47,7 @@ func init() {
 
 		//如果开通转账功能
 		if v.ListType != 0 {
-			NewTrade(v.ListType).createTab()
+			NewTrade(v.Id).createTab()
 		}
 	}
 }

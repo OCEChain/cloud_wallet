@@ -10,15 +10,13 @@ import (
 )
 
 //以太坊转账
-type eth_transfer struct {
+type eth_token_transfer struct {
 }
 
-var defaultEthTransfer = new(eth_transfer)
-
-var HasEthId = errors.New("已经有了该id")
+var defaultEthTokenTransfer = new(eth_token_transfer)
 
 //获取gasprice
-func (e *eth_transfer) getGasPrice() (price string, err error) {
+func (e *eth_token_transfer) getGasPrice() (price string, err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			faygo.Info(err)
@@ -31,6 +29,7 @@ func (e *eth_transfer) getGasPrice() (price string, err error) {
 		return
 	}
 	if data.Code != "200" {
+		faygo.Debug(data)
 		err = errors.New("获取gasprice失败")
 		return
 	}
@@ -40,17 +39,17 @@ func (e *eth_transfer) getGasPrice() (price string, err error) {
 }
 
 //交易签名
-func (e *eth_transfer) sign(addr string, num float64, gasPrice string, nonce int) (hex string, err error) {
+func (e *eth_token_transfer) sign(addr string, num float64, gasPrice string, nonce int, coin_addr string) (hex string, err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			faygo.Info(err)
 		}
 	}()
 	url := config.GetConfig("list", "not_online_url").String()
-	url = url + "/eth/sign"
+	url = url + "/eth-token/sign"
 
-	param := fmt.Sprintf("%v|%v|%v|%v", addr, gasPrice, nonce, strconv.FormatFloat(num, 'f', 8, 64))
-
+	param := fmt.Sprintf("%v|%v|%v|%v|%v", coin_addr, addr, gasPrice, nonce, strconv.FormatFloat(num, 'f', 8, 64))
+	faygo.Debug(param)
 	data, err := curl_post(url, param, time.Minute)
 
 	if err != nil {
@@ -64,6 +63,7 @@ func (e *eth_transfer) sign(addr string, num float64, gasPrice string, nonce int
 	}
 
 	if data.Code != "200" {
+		faygo.Debug(data)
 		err = errors.New("交易签名失败")
 		return
 	}
@@ -71,7 +71,7 @@ func (e *eth_transfer) sign(addr string, num float64, gasPrice string, nonce int
 	return
 }
 
-func (e *eth_transfer) send(sign_msg string) (err error) {
+func (e *eth_token_transfer) send(sign_msg string) (err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			faygo.Info(err)
@@ -84,8 +84,10 @@ func (e *eth_transfer) send(sign_msg string) (err error) {
 		//faygo.Debug(data)
 		return
 	}
+	faygo.Debug(data)
 	//已经有了的记录
 	if data.Code == "666" {
+		faygo.Debug(666)
 		return nil
 	}
 	if data.Code != "200" {

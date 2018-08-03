@@ -69,38 +69,69 @@ func (f *fee) Get(typeid int) (res string) {
 func init() {
 	go func() {
 		//程序一启动,从redis队列中读取那些去要转账的账单进行转账
-		c := redis.Consumer("coin_transfer")
-		trade_data := model.Trade{}
+		c := redis.Consumer("coin_transfer", 1)
+
+		//分两个协程进行转账，分比特系，以太系
+		transfer_chan := make(map[int]chan model.Trade)
+		for i := 1; i < 3; i++ {
+			ch := make(chan model.Trade)
+			transfer_chan[i] = ch
+			go func(ch chan model.Trade, i int) {
+				for {
+					trade_data := <-ch
+					//查询出该记录
+					trade_model := model.NewTrade(trade_data.CoinTypeid)
+					//说明这是不存在的类型，直接抛弃
+					if trade_model == nil {
+						continue
+					}
+
+					trade, err := trade_model.GetTradeById(trade_data.Id)
+
+					if err != nil || trade.Is_ok == 1 || trade.Is_ok == 2 || trade.Is_ok == 3 {
+						continue
+					}
+
+					nouceid, err := trade_model.PushList(trade_data.CoinTypeid, trade.Addr, trade.Num, trade.Id, trade.Fee)
+					if err == model.Return_push_list {
+						faygo.Debug(err)
+						faygo.Debug("重新放入队列的是", trade_data)
+						redis.New().Replay("coin_transfer", trade_data)
+						continue
+					}
+
+					//faygo.Debug("当前执行到的id为", trade.TradeId)
+					//设置当前执行到eth的nouceid的值
+					if nouceid > 0 {
+						TradeEthId.SetId(nouceid)
+					}
+
+					//休眠
+					if i == 1 {
+						time.Sleep(time.Second * 3)
+					}
+
+				}
+
+			}(ch, i)
+		}
+
 		for data := range c {
+			trade_data := model.Trade{}
 			err := json.Unmarshal([]byte(data), &trade_data)
 			if err != nil {
 				continue
 			}
 
-			//查询出该记录
-			trade_model := model.NewTrade(trade_data.CoinTypeid)
-			//说明这是不存在的类型，直接抛弃
-			if trade_model == nil {
-				continue
+			coin_type := model.AllCoinType.GetOneCoinInfoByTypeid(trade_data.CoinTypeid)
+			key := 1
+			if coin_type.ListType == 2 || coin_type.ListType == 4 {
+				key = 2
 			}
-
-			trade, err := trade_model.GetTradeById(trade_data.Id)
-			if err != nil || trade.Is_ok == 1 || trade.Is_ok == 2 || trade.Is_ok == 3 {
-				continue
-			}
-
-			err = trade_model.PushList(trade.CoinTypeId, trade.Addr, trade.Num, trade.Id, trade.TradeId, trade.Fee)
-			//出错直接继续
-			if err != nil {
-				//faygo.Debug(err)
-				//redis.New().Replay("coin_transfer", trade_data)
-				continue
-			}
-			//faygo.Debug("当前执行到的id为", trade.TradeId)
-			//设置当前执行到的
-			TradeEthId.SetId(trade.Id + 1)
-
+			ch := transfer_chan[key]
+			ch <- trade_data
 		}
+
 	}()
 
 	id, err := model.GetEthId()
@@ -116,9 +147,12 @@ func init() {
 		for {
 			select {
 			case <-tick.C:
+				list := model.AllCoinType.GetAllInfoList()
 				//查询出记录中的需要返回的
-				model.NewTrade(1).ReturnProfit(10)
-				model.NewTrade(2).ReturnProfit(10)
+				for _, v := range list {
+					model.NewTrade(v.Id).ReturnProfit(10)
+				}
+
 			}
 		}
 	}()
@@ -156,21 +190,24 @@ func init() {
 	}()
 
 	//开启一个协程，定时去将数据库中小于当前需要转账id的未确认记录拿出来重新执行一遍(避免执行失败后，将记录标记ok为2失败，重新执行）
-	for i := 1; i < 3; i++ {
-		go func(list_typeid int) {
-			trade := model.NewTrade(list_typeid)
-			tick := time.NewTicker(time.Second * 10)
-			for {
-				select {
-				case <-tick.C:
+
+	go func() {
+
+		tick := time.NewTicker(time.Second * 10)
+		for {
+			select {
+			case <-tick.C:
+				list := model.AllCoinType.GetAllInfoList()
+				for _, v := range list {
+					trade := model.NewTrade(v.Id)
 					//faygo.Debug("开始查漏")
 					var list []model.Trade
 					var err error
-					switch list_typeid {
-					case 1:
+					switch v.ListType {
+					case 1, 3:
 						//如果是比特币类型的
 						list, err = trade.GetNotOk(0, 20)
-					case 2:
+					case 2, 4:
 						//如果是eth类型的
 						//获取当前将要执行的账本id
 						id := TradeEthId.GetId()
@@ -188,10 +225,11 @@ func init() {
 						//faygo.Debug("将未确认的放入队列中", list[i])
 						redis.New().Replay("coin_transfer", list[i])
 					}
-
 				}
+
 			}
-		}(i)
-	}
+		}
+
+	}()
 
 }

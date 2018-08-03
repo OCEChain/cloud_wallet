@@ -6,6 +6,7 @@ import (
 	"github.com/henrylee2cn/faygo"
 	"math/big"
 	"strconv"
+	"strings"
 	"user/config"
 	"wallet/model"
 	"wallet/redis"
@@ -123,7 +124,7 @@ func (w *Wallet) Doc() faygo.Doc {
 //获取账本
 type Book struct {
 	Token    string `param:"<in:formData><required><name:token><desc:用户登陆后获取的token>"`
-	CoinType int    `param:"<in:formData><required><name:cointype><desc:转出的币种类型，1:btc ,2:eth >"`
+	CoinType string `param:"<in:formData><required><name:cointype><desc:转出的币种类型，btc ,eth >"`
 	Page     int    `param:"<in:formData><required><name:page><desc:页码>"`
 }
 
@@ -157,11 +158,12 @@ func (b *Book) Serve(ctx *faygo.Context) error {
 	data["page"] = b.Page
 	data["limit"] = limit
 
-	coinType := model.AllCoinType.GetOneCoinInfoByTypeid(b.CoinType)
+	//coinType := model.AllCoinType.GetOneCoinInfoByTypeid(b.CoinType)
+	coinType := model.AllCoinType.GetOneCoinInfoByChar(b.CoinType)
 	if coinType == nil {
 		return jsonReturn(ctx, 0, "不存在的币种类型")
 	}
-	coinLog := model.NewCoinLog(b.CoinType)
+	coinLog := model.NewCoinLog(coinType.Id)
 	count, err := coinLog.Count(uid)
 	if err != nil {
 		return jsonReturn(ctx, 0, err.Error())
@@ -196,7 +198,7 @@ func (b *Book) Doc() faygo.Doc {
 //领取
 type Receive_profit struct {
 	Token    string `param:"<in:formData><required><name:token><desc:用户登陆后获取的token>"`
-	CoinType int    `param:"<in:formData><required><name:cointype><desc:转出的币种类型，1:btc ,2:eth >"`
+	CoinType string `param:"<in:formData><required><name:cointype><desc:转出的币种类型，btc ,eth >"`
 }
 
 func (r *Receive_profit) Serve(ctx *faygo.Context) error {
@@ -217,9 +219,13 @@ func (r *Receive_profit) Serve(ctx *faygo.Context) error {
 		return jsonReturn(ctx, 2, err.Error())
 	}
 	uid := user.GetUidByToken()
+	c_type := model.AllCoinType.GetOneCoinInfoByChar(r.CoinType)
+	if c_type == nil {
+		return jsonReturn(ctx, 0, "不存在的币种类型")
+	}
 
 	//清空
-	coinType := model.NewCoin(r.CoinType)
+	coinType := model.NewCoin(c_type.Id)
 	if coinType == nil {
 		return jsonReturn(ctx, 0, "不存在的币种类型")
 	}
@@ -245,7 +251,7 @@ func (r *Receive_profit) Doc() faygo.Doc {
 type Transfer struct {
 	//Tradepwd string  `param:"<in:formData><required><name:tradepwd><desc:用户的交易密码>"`
 	Num      float64 `param:"<in:formData><required><name:num><desc:转出的数额>"`
-	CoinType int     `param:"<in:formData><required><name:cointype><desc:转出的币种类型，1:btc ,2:eth>"`
+	CoinType string  `param:"<in:formData><required><name:cointype><desc:转出的币种类型，btc ,eth>"`
 	Addr     string  `param:"<in:formData><required><name:addr><desc:转出的地址>"`
 	Token    string  `param:"<in:formData><required><name:token><desc:用户登陆后获取的token>"`
 	FeeType  int     `param:"<in:formData><name:feetype><desc:选择的手续费类型,只有转比特币的时候有用，1表示fastestFee 2表示halfHourFee 3表示hourFee>"`
@@ -281,9 +287,22 @@ func (t *Transfer) Serve(ctx *faygo.Context) error {
 	//if !ok {
 	//	return jsonReturn(ctx, 0, "交易密码不正确")
 	//}
+	//获取币种
+	coinType := model.AllCoinType.GetOneCoinInfoByChar(t.CoinType)
+	if coinType == nil {
+		return jsonReturn(ctx, 0, "不存在的币种类型")
+	}
+
+	if coinType.ListType == 2 || coinType.ListType == 4 {
+		t.Addr = strings.ToLower(t.Addr)
+		//判断地址是否正确
+		if !strings.HasPrefix(t.Addr, "0x") {
+			return jsonReturn(ctx, 0, "请输入正确格式的转账地址")
+		}
+	}
 
 	//检查转出是否足够
-	coin := model.NewCoin(t.CoinType)
+	coin := model.NewCoin(coinType.Id)
 	if coin == nil {
 		return jsonReturn(ctx, 0, "不存在的币种类型")
 	}
@@ -295,18 +314,13 @@ func (t *Transfer) Serve(ctx *faygo.Context) error {
 		return jsonReturn(ctx, 0, "余额不足")
 	}
 
-	//获取币种
-	coinType := model.AllCoinType.GetOneCoinInfoByTypeid(t.CoinType)
-	if coinType == nil {
-		return jsonReturn(ctx, 0, "不存在的币种类型")
-	}
-	if coinType.ListType == 0 {
+	if coinType.ListType == 0 || coinType.Transfer_status == 0 {
 		return jsonReturn(ctx, 0, "当前币种暂时不可以转账")
 	}
 	var fee float64
 	//获取手续费
 	switch coinType.ListType {
-	case 1:
+	case 1, 3:
 		//比特类型
 		res := coinFee.Get(1)
 		data := make(map[string]interface{})
@@ -325,7 +339,7 @@ func (t *Transfer) Serve(ctx *faygo.Context) error {
 		default:
 			return jsonReturn(ctx, 0, "非法参数")
 		}
-	case 2:
+	case 2, 4:
 		//eth
 		res := coinFee.Get(2)
 
@@ -352,8 +366,8 @@ func (t *Transfer) Serve(ctx *faygo.Context) error {
 	}
 
 	//添加交易记录
-	trade_model := model.NewTrade(t.CoinType)
-	err = trade_model.Add(t.CoinType, coin.Balance, fee, uid, t.Addr, t.Num)
+	trade_model := model.NewTrade(coinType.Id)
+	err = trade_model.Add(coinType.Id, coin.Balance, fee, uid, t.Addr, t.Num)
 	if err != nil {
 		return jsonReturn(ctx, 0, err.Error())
 	}
@@ -373,7 +387,7 @@ func (t *Transfer) Doc() faygo.Doc {
 
 //获取手续费
 type GetPoundage struct {
-	CoinTypeid int `param:"<in:formData><required><name:cointype><desc:币种类型>"`
+	CoinType string `param:"<in:formData><required><name:cointype><desc:币种类型 btc eth>"`
 }
 
 func (g *GetPoundage) Serve(ctx *faygo.Context) error {
@@ -383,12 +397,12 @@ func (g *GetPoundage) Serve(ctx *faygo.Context) error {
 	}
 
 	//获取币种
-	coinType := model.AllCoinType.GetOneCoinInfoByTypeid(g.CoinTypeid)
+	coinType := model.AllCoinType.GetOneCoinInfoByChar(g.CoinType)
 	if coinType == nil {
 		return jsonReturn(ctx, 0, "不存在的币种类型")
 	}
 	switch coinType.ListType {
-	case 1:
+	case 1, 3:
 		//比特类型
 		res := coinFee.Get(1)
 		faygo.Debug(res)
@@ -400,7 +414,7 @@ func (g *GetPoundage) Serve(ctx *faygo.Context) error {
 		}
 
 		return jsonReturn(ctx, 200, fee)
-	case 2:
+	case 2, 4:
 		//eth
 		res := coinFee.Get(2)
 

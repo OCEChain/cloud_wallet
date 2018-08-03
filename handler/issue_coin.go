@@ -65,7 +65,7 @@ func (q *queue) Issue(uid string) {
 		//跑出一个协程进行发币
 		go func(uid string, ch chan bool, coinType *model.CoinType) {
 			//假设是5分钟发一次币
-			tick := time.NewTicker(time.Minute * time.Duration(coinType.Issue_time))
+			tick := time.NewTicker(time.Second * time.Duration(coinType.Issue_time))
 			defer tick.Stop()
 			for {
 				select {

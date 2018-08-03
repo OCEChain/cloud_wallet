@@ -2,6 +2,7 @@ package model
 
 import (
 	"github.com/go-errors/errors"
+	x "github.com/go-xorm/xorm"
 	"github.com/henrylee2cn/faygo"
 	"github.com/henrylee2cn/faygo/ext/db/xorm"
 )
@@ -27,30 +28,20 @@ func init() {
 }
 
 //获取一条记录
-func (a *AddrSerialNum) GetSerialNum() (id int, err error) {
-	engine := xorm.MustDB()
-	sess := engine.NewSession()
-	err = sess.Begin()
-	if err != nil {
-		err = SystemFail
-		return
-	}
+func (a *AddrSerialNum) GetSerialNum(sess *x.Session) (id int, err error) {
+
 	ids := new(Ids)
 	has, err := sess.Where("is_use=?", 0).Get(ids)
 	if err != nil {
-		err = SystemFail
-		sess.Rollback()
 		return
 	}
 
-	//如果没有
+	//如果没有,曾从新生成一个，并且累加
 	if !has {
 		addrSerialNum := new(AddrSerialNum)
 		b, err := sess.Table(AddrSerialNumTable).Where("id=?", 1).Get(addrSerialNum)
 		if err != nil {
-			err = SystemFail
-			sess.Rollback()
-			return id, err
+			return 0, err
 		}
 		if !b {
 			addrSerialNum.Serial_num = 1
@@ -58,11 +49,11 @@ func (a *AddrSerialNum) GetSerialNum() (id int, err error) {
 			//不存在则创建一条记录
 			n, err := sess.Insert(addrSerialNum)
 			if err != nil {
-				err = SystemFail
-				return id, err
+				return 0, err
 			}
 			if n == 0 {
 				err = errors.New("创建失败")
+				return 0, err
 			}
 			addrSerialNum.Id = 1
 		}
@@ -71,17 +62,28 @@ func (a *AddrSerialNum) GetSerialNum() (id int, err error) {
 		ids.Is_use = 1 //表明已经使用了该id
 		n, err := sess.Insert(ids)
 		if err != nil || n == 0 {
-			sess.Rollback()
 			err = SystemFail
-			return id, err
+			return 0, err
+		}
+		//全局交易id累加
+		res, err := sess.Exec("update addr_serial_num set serial_num=serial_num+1")
+		if err != nil {
+			err = SystemFail
+			return 0, err
+		}
+		n, err = res.RowsAffected()
+		if err != nil || n == 0 {
+			return 0, err
 		}
 
 	} else {
 		ids.Is_use = 1
-		sess.Where("id=?", ids.Id).Update(ids)
+		_, err := sess.Where("id=?", ids.Id).Update(ids)
+		if err != nil {
+			return 0, err
+		}
 	}
 	id = ids.Id
-	sess.Commit()
 	return
 }
 

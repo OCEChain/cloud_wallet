@@ -14,7 +14,7 @@ import (
 )
 
 type coin struct {
-	Uid            string  `xorm:"not null default('') char(20) comment('用户uid')"`
+	Uid            string  `xorm:"not null unique default('') char(20) comment('用户uid')"`
 	Profit         float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('累计收益')"`
 	Receive_profit float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('可领取的收益')"`
 	Balance        float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('余额')"`
@@ -68,6 +68,7 @@ func (c *coin) AddProfit(uid string, profit float64) (err error) {
 func (c *coin) Receive(uid string) (err error) {
 	engine := xorm.MustDB()
 	sess := engine.NewSession()
+	defer sess.Close()
 	err = sess.Begin()
 	if err != nil {
 		err = SystemFail
@@ -111,7 +112,7 @@ func (c *coin) Receive(uid string) (err error) {
 
 	//增加一条领取记录
 	coinlog := NewCoinLog(c.coinType)
-	err = coinlog.setTableName(c.tableLogName).AddLog(uid, 1, receive, balance+receive)
+	err = coinlog.setTableName(c.tableLogName).AddLog(sess, uid, 1, receive, balance+receive)
 	if err != nil {
 		sess.Rollback()
 		err = SystemFail
@@ -179,21 +180,23 @@ func (c *coin) ReturnProfit(id, tradeid int, uid string, num float64) {
 	err := sess.Begin()
 	_, err = sess.Exec("update "+c.tableName+" set balance=balance+? where uid=?", num, uid)
 	if err != nil {
+
 		sess.Rollback()
 		return
 	}
 
 	//将记录设置为已经返回余额度
-	trade := NewTrade(coinType.ListType)
+	trade := NewTrade(coinType.Id)
 	trade_table_name := trade.tableName
 	trade.Is_ok = 3
 	n, err := sess.Table(trade_table_name).Where("id=?", id).Update(trade)
 	if err != nil || n == 0 {
+		faygo.Debug(err)
 		sess.Rollback()
 		return
 	}
 	//如果是以太
-	if coinType.ListType == 2 {
+	if coinType.ListType == 2 || coinType.ListType == 4 {
 
 		//将tradeid返回，以备下次使用
 		ids := new(Ids)
@@ -206,6 +209,7 @@ func (c *coin) ReturnProfit(id, tradeid int, uid string, num float64) {
 			return
 		}
 	}
+
 	var balance float64
 	//查询出最新的余额
 	has, err := sess.Table(c.tableName).Where("uid=?", uid).Cols("balance").Get(&balance)

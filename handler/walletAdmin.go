@@ -242,6 +242,7 @@ func (c *CoinSave) Serve(ctx *faygo.Context) error {
 	c_type.Colin_limit = c.Coin_limit
 	c_type.Issue_time = c.Issue_time
 	c_type.Status = c.Status
+	c_type.Transfer_status = 1
 	var need_reset_issue bool
 	switch c.Id {
 	case 0:
@@ -310,6 +311,26 @@ func (c *GetCoinTypeById) Serve(ctx *faygo.Context) error {
 	data["issue"] = c_type.Issue_time
 	data["status"] = c_type.Status
 	data["id"] = c_type.Id
+	switch c_type.ListType {
+	case 1:
+		data["coin_type"] = "比特币"
+	case 2:
+		data["coin_type"] = "以太坊"
+	case 3:
+		data["coin_type"] = "比特代币"
+	case 4:
+		data["coin_type"] = "以太代币"
+	default:
+		data["coin_type"] = ""
+	}
+	data["coin_typeid"] = c_type.ListType
+	if c_type.Propertyid > 0 {
+		data["propertyid"] = c_type.Propertyid
+	}
+	if c_type.Addr != "" {
+		data["addr"] = c_type.Addr
+	}
+
 	return jsonReturn(ctx, 200, data)
 }
 

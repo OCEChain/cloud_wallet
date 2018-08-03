@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	x "github.com/go-xorm/xorm"
 	"github.com/henrylee2cn/faygo"
 	"github.com/henrylee2cn/faygo/ext/db/xorm"
 	"time"
@@ -9,9 +10,9 @@ import (
 
 type coinLog struct {
 	Id         int     `xorm:"not null INT(11) pk autoincr" json:"id"`
-	Uid        string  `xorm:"not null default('') char(20) comment('用户uid')" json:"-"`
+	Uid        string  `xorm:"not null index default('') char(20) comment('用户uid')" json:"-"`
 	Num        float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('数量')" json:"num"`
-	Typeid     int     `xorm:"not null default(0) tinyint(4) comment('类型，1:领取, 2:转出')" json:"type"`
+	Typeid     int     `xorm:"not null index default(0) tinyint(4) comment('类型，1:领取, 2:转出')" json:"type"`
 	Balance    float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('操作完后的余额')" json:"balance"`
 	Time       int64   `xorm:"not null default(0) int(11) comment('操作时间')" json:"time"`
 	tableName  string  `xorm:"-"`
@@ -44,15 +45,15 @@ func (c *coinLog) setTableName(tableName string) (co *coinLog) {
 }
 
 //增加一条记录
-func (c *coinLog) AddLog(uid string, typeid int, num, balance float64) (err error) {
-	engine := xorm.MustDB()
+func (c *coinLog) AddLog(sess *x.Session, uid string, typeid int, num, balance float64) (err error) {
 	c.Uid = uid
 	c.Num = num
 	c.Typeid = typeid
 	c.Balance = balance
 	c.Time = time.Now().Unix()
-	n, err := engine.Table(c.tableName).Insert(c)
+	n, err := sess.Table(c.tableName).Insert(c)
 	if err != nil {
+		faygo.Debug(err)
 		err = SystemFail
 		return
 	}

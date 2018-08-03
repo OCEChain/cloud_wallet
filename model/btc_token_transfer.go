@@ -9,51 +9,35 @@ import (
 	"wallet/config"
 )
 
-//比特币转账
-type btc_transfer struct {
+//比特币代币转账
+type btc_token_transfer struct {
 }
 
-var defaultBtcTransfer = new(btc_transfer)
-
-type createData struct {
-	Complete bool   `json:"complete"`
-	Final    bool   `json:"final"`
-	Hex      string `json:"hex"`
-}
-
-var Return_push_list error = errors.New("区块链服务出错，放回队列")
+var defaultBtcTokenTransfer = new(btc_token_transfer)
 
 //创建交易
-func (b *btc_transfer) create(addr string, num float64, fee float64) (hex string, err error) {
+func (b *btc_token_transfer) create(addr string, num float64, fee float64, propertyid int) (hex string, err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			faygo.Info(err)
 		}
 	}()
-	url := config.GetConfig("list", "online_url").String()
-	url = url + "/btc/create"
 
-	param := fmt.Sprintf("%v|%v|%v", addr, strconv.FormatFloat(num, 'f', 8, 64), strconv.FormatFloat(fee, 'f', 8, 64))
-	faygo.Debug(param)
+	url := config.GetConfig("list", "online_url").String()
+	url = url + "/btc-token/create"
+
+	param := fmt.Sprintf("%v|%v|%v|%v", propertyid, addr, strconv.FormatFloat(num, 'f', 8, 64), strconv.FormatFloat(fee, 'f', 8, 64))
+
 	data, err := curl_post(url, param, time.Second*30)
 	if err != nil {
 		return
 	}
 	if data.Code != "200" {
-		faygo.Debug(data.Message)
+		faygo.Debug(data)
 		err = errors.New("创建交易失败")
 		return
 	}
 
-	//c_data := new(createData)
-	//err = json.Unmarshal([]byte(fmt.Sprintf("%v", data.Message)), c_data)
-	//if err != nil {
-	//	faygo.Debug(err)
-	//	faygo.Debug(data.Message)
-	//	err = errors.New("解析返回数据出错")
-	//	return
-	//}
-	//hex = c_data.Hex
 	hex, ok := data.Message.(string)
 	if !ok {
 		err = errors.New("解析返回数据出错")
@@ -62,32 +46,25 @@ func (b *btc_transfer) create(addr string, num float64, fee float64) (hex string
 }
 
 //交易签名
-func (b *btc_transfer) sign(msg string) (hex string, err error) {
+func (b *btc_token_transfer) sign(msg string) (hex string, err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			faygo.Info(err)
 		}
 	}()
 	url := config.GetConfig("list", "not_online_url").String()
-	url = url + "/btc/sign"
+	url = url + "/btc-token/sign"
 	data, err := curl_post(url, msg, time.Second*30)
 	if err != nil {
 		return
 	}
 	if data.Code != "200" {
+		faygo.Debug(data)
 		err = errors.New("交易签名失败")
 		return
 	}
 	//返回签名后的交易信息
 	//获取其中的签名后的hex
-	//c_data := new(createData)
-	//err = json.Unmarshal([]byte(fmt.Sprintf("%v", data.Message)), c_data)
-	//if err != nil {
-	//	faygo.Debug(data)
-	//	err = errors.New("解析返回数据出错")
-	//	return
-	//}
-	//hex = c_data.Hex
 	hex, ok := data.Message.(string)
 	if !ok {
 		err = errors.New("解析返回数据出错")
@@ -96,14 +73,14 @@ func (b *btc_transfer) sign(msg string) (hex string, err error) {
 }
 
 //发送交易
-func (b *btc_transfer) send(sign_msg string) (err error) {
+func (b *btc_token_transfer) send(sign_msg string) (err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			faygo.Info(err)
 		}
 	}()
 	url := config.GetConfig("list", "online_url").String()
-	url = url + "/btc/send"
+	url = url + "/btc-token/send"
 	data, err := curl_post(url, sign_msg, time.Minute)
 	if err != nil {
 		return
@@ -113,6 +90,7 @@ func (b *btc_transfer) send(sign_msg string) (err error) {
 		err = Return_push_list
 		return
 	}
+
 	if data.Code != "200" {
 		faygo.Debug(data)
 		err = errors.New("发送交易失败")
@@ -120,14 +98,14 @@ func (b *btc_transfer) send(sign_msg string) (err error) {
 	return
 }
 
-func (b *btc_transfer) getPoundage() (res map[string]interface{}, err error) {
+func (b *btc_token_transfer) getPoundage() (res map[string]interface{}, err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			faygo.Info(err)
 		}
 	}()
 	url := config.GetConfig("list", "online_url").String()
-	url = url + "/btc/fee"
+	url = url + "/btc-token/fee"
 	data, err := curl_get(url, time.Second*30)
 	if err != nil {
 		return

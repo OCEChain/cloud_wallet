@@ -9,23 +9,24 @@ import (
 
 //币种类型
 type CoinType struct {
-	Id          int     `xorm:"not null INT(11) pk autoincr" json:"id"`
-	Name        string  `xorm:"not null default('') varchar(50) comment('币种名称，如比特币')" json:"name"`
-	Coin_char   string  `xorm:"not null default('') varchar(20) comment('币种代号，如 btc, eth')" json:"char"`
-	Face        string  `xorm:"not null default('') varchar(255) comment('币种图标')" json:"face"`
-	Unit        string  `xorm:"not null default('') varchar(20) comment('单位')" json:"unit"`
-	Unit_face   string  `xorm:"not null default('') varchar(255) comment('单位的图片')" json:"unit_face"`
-	Base        int     `xorm:"not null default(0) int(11) comment('如果使用自定义的单位，则乘以这个数进行展示')"`
-	Status      int     `xorm:"not null default(0) tinyint(4) comment('状态，1表示可用，0表示禁用')" json:"-"`
-	Addr        string  `xorm:"not null default('') varchar(50) comment('合约地址')"`
-	Propertyid  int     `xorm:"not null default('') varchar(50) comment('propertyId')"`
-	ListType    int     `xorm:"not null default(0) tinyint(4) comment('上链的类型1表示比特币 2以太币 3比特代币 4以太代币')" json:"-"`
-	Get_price   int     `xorm:"not null default(0) int(11) comment('是否自动获取价格')" json:"-"`
-	Coin_price  float64 `xorm:"not null default(0.00) decimal(10,2) comment('币种价格')" json:"-"`
-	Coin_time   int64   `xorm:"not null default(0) int(11) comment('期限,发币期限，单位分钟')" json:"-"`
-	Colin_limit float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('没次分发的限额')" json:"-"`
-	Issue_time  int64   `xorm:"not null default(0) int(11) comment('发币间隔时间')" json:"-"`
-	Update_time int64   `xorm:"not null default(0) int(11) comment('修改时间')" json:"-"`
+	Id              int     `xorm:"not null INT(11) pk autoincr" json:"id"`
+	Name            string  `xorm:"not null default('') varchar(50) comment('币种名称，如比特币')" json:"name"`
+	Coin_char       string  `xorm:"not null default('') varchar(20) comment('币种代号，如 btc, eth')" json:"char"`
+	Face            string  `xorm:"not null default('') varchar(255) comment('币种图标')" json:"face"`
+	Unit            string  `xorm:"not null default('') varchar(20) comment('单位')" json:"unit"`
+	Unit_face       string  `xorm:"not null default('') varchar(255) comment('单位的图片')" json:"unit_face"`
+	Base            int     `xorm:"not null default(0) int(11) comment('如果使用自定义的单位，则乘以这个数进行展示')"`
+	Status          int     `xorm:"not null default(0) tinyint(4) comment('状态，1表示可用，0表示禁用')" json:"-"`
+	Addr            string  `xorm:"not null default('') varchar(50) comment('合约地址')"`
+	Propertyid      int     `xorm:"not null default(0) int(11) comment('propertyId')"`
+	Transfer_status int     `xorm:"not null default(0) tinyint(4) comment('转账状态 1开启转账 2未开启转账')"`
+	ListType        int     `xorm:"not null default(0) tinyint(4) comment('上链的类型1表示比特币 2以太币 3比特代币 4以太代币')" json:"-"`
+	Get_price       int     `xorm:"not null default(0) int(11) comment('是否自动获取价格')" json:"-"`
+	Coin_price      float64 `xorm:"not null default(0.00) decimal(10,2) comment('币种价格')" json:"-"`
+	Coin_time       int64   `xorm:"not null default(0) int(11) comment('期限,发币期限，单位分钟')" json:"-"`
+	Colin_limit     float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('没次分发的限额')" json:"-"`
+	Issue_time      int64   `xorm:"not null default(0) int(11) comment('发币间隔时间')" json:"-"`
+	Update_time     int64   `xorm:"not null default(0) int(11) comment('修改时间')" json:"-"`
 }
 
 const (
@@ -99,6 +100,7 @@ func (c *CoinType) GetCoinType() (list map[string]*CoinType, listById map[int]*C
 		coin_type := new(CoinType)
 		err = rows.Scan(coin_type)
 		if err != nil {
+			faygo.Debug(err)
 			err = SystemFail
 			return
 		}
