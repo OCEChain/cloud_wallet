@@ -90,6 +90,7 @@ func (a *AddrSerialNum) GetSerialNum(sess *x.Session) (id int, err error) {
 func (a *AddrSerialNum) Get() (addrSerialNum *AddrSerialNum, err error) {
 	engine := xorm.MustDB()
 	sess := engine.NewSession()
+	defer sess.Close()
 	err = sess.Begin()
 	if err != nil {
 		err = SystemFail

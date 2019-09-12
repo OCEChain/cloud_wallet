@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"github.com/gomodule/redigo/redis"
 	"github.com/henrylee2cn/faygo"
-	"mirror/config"
+	"os"
 	"time"
+	"wallet/config"
 )
 
 type Redis struct {
@@ -19,10 +20,19 @@ var host string
 
 func init() {
 	host = config.GetConfig("redis", "host").String()
+	MaxIdle, err := config.GetConfig("redis", "MaxIdle").Int()
+	if err != nil {
+		faygo.Info("获取配置出错")
+		os.Exit(2)
+	}
+	MaxActive, err := config.GetConfig("redis", "MaxActive").Int()
+	if err != nil {
+		faygo.Info("获取配置出错")
+		os.Exit(2)
+	}
 	redisCient = &redis.Pool{
-		// 从配置文件获取maxidle以及maxactive，取不到则用后面的默认值
-		MaxIdle:     15,
-		MaxActive:   10,
+		MaxIdle:     MaxIdle,
+		MaxActive:   MaxActive,
 		IdleTimeout: 180 * time.Second,
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", host)
@@ -55,9 +65,6 @@ func (r *Redis) put() {
 func (r *Redis) Get(key string) (reply string, err error) {
 	reply, err = redis.String(r.conn.Do("GET", key))
 	defer r.put()
-	if err == redis.ErrNil {
-		return "", nil
-	}
 	return
 }
 
@@ -67,6 +74,12 @@ func (r *Redis) Set(key string, value interface{}, expire ...interface{}) (reply
 	} else {
 		reply, err = r.conn.Do("SET", key, value)
 	}
+	defer r.put()
+	return
+}
+
+func (r *Redis) Del(key string) (reply string, err error) {
+	reply, err = redis.String(r.conn.Do("DEL", key))
 	defer r.put()
 	return
 }

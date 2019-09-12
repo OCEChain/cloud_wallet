@@ -15,7 +15,7 @@ type trade struct {
 	TradeId    int     `xorm:"not null default(0) int(11) comment('eth使用的交易id')"`
 	Uid        string  `xorm:"not null default('') char(20) comment('uid')"`
 	Addr       string  `xorm:"not null default('') varchar(255) comment('发送的地址')"`
-	Num        float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('交易的金额')"`
+	Num        float64 `xorm:"not null default(0.00000000) decimal(18,8) comment('交易的金额')"`
 	Is_ok      int     `xorm:"not null default(0) index tinyint(4) comment('是否已经交易完成 0表示未操作，1表示已经ok,2表示交易失败,3表示已经返还')"`
 	Fee        float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('转账需要的手续费')"`
 	Time       int64   `xorm:"not null default(0) int(11) comment('交易的时间')"`
@@ -88,6 +88,7 @@ func (t *trade) Add(Typeid int, balance float64, fee float64, uid string, addr s
 	engine := xorm.MustDB()
 	//开启事务
 	sess := engine.NewSession()
+	defer sess.Close()
 	err = sess.Begin()
 	if err != nil {
 		err = SystemFail
@@ -142,7 +143,7 @@ func (t *trade) Add(Typeid int, balance float64, fee float64, uid string, addr s
 		return
 	}
 
-	err = coin_log.AddLog(sess, uid, 2, num, coin.Balance)
+	err = coin_log.AddLog(sess, uid, 2, num, coin.Balance, addr)
 	if err != nil {
 		sess.Rollback()
 		return
@@ -367,7 +368,7 @@ func (t *trade) ReturnProfit(limit int) (err error) {
 	}
 
 	for _, v := range list {
-		NewCoin(t.CoinTypeId).ReturnProfit(v.Id, v.TradeId, v.Uid, v.Num)
+		NewCoin(t.CoinTypeId).ReturnProfit(v.Id, v.TradeId, v.Uid, v.Num, v.Addr)
 	}
 	return
 }

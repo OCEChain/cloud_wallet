@@ -46,33 +46,21 @@ type CoinTypeAdmin struct {
 
 //获取所有的币种类型
 func (c *CoinType) GetCoinTypeAdmin() (typeListAdmin []*CoinTypeAdmin, err error) {
-	//engine := xorm.MustDB()
-	//rows, err := engine.Rows(c)
-	//if err != nil {
-	//	err = SystemFail
-	//	return
-	//}
-	//defer rows.Close()
-	//
-	//for rows.Next() {
-	//	coin_type := new(CoinType)
-	//	err = rows.Scan(coin_type)
-	//	if err != nil {
-	//		err = SystemFail
-	//		return
-	//	}
-	//	co := new(CoinTypeAdmin)
-	//	co.CoinType = coin_type
-	//	co.Coin_price = coin_type.Coin_price
-	//	co.Coin_time = coin_type.Coin_time
-	//	co.Colin_limit = coin_type.Colin_limit
-	//	co.Issue_time = coin_type.Issue_time
-	//	co.Status = coin_type.Status
-	//	typeListAdmin = append(typeListAdmin, co)
-	//}
+	engine := xorm.MustDB()
+	rows, err := engine.Rows(c)
+	if err != nil {
+		err = SystemFail
+		return
+	}
+	defer rows.Close()
 
-	list := AllCoinType.GetAllInfoList()
-	for _, coin_type := range list {
+	for rows.Next() {
+		coin_type := new(CoinType)
+		err = rows.Scan(coin_type)
+		if err != nil {
+			err = SystemFail
+			return
+		}
 		co := new(CoinTypeAdmin)
 		co.CoinType = coin_type
 		co.Coin_price = coin_type.Coin_price
@@ -127,20 +115,33 @@ func (c *CoinType) Action(typeid int, status int) (err error) {
 		err = errors.New("错误的类型")
 		return
 	}
+
+	//判断是否已经有禁用或者启用的操作在执行
+	if AllCoinType.GetResetStatus() {
+		err = errors.New("当前系统正处于重置币种中，请稍后再试")
+		return
+	}
+	AllCoinType.SetReset(true) //设置成重置币种的状态
 	engine := xorm.MustDB()
 	c_type := new(CoinType)
 	c_type.Status = status
 	n, err := engine.Where("id=?", typeid).Cols("status").Update(c_type)
 	if err != nil {
+		AllCoinType.SetReset(false) //设置成重置币种的状态
 		err = SystemFail
 		return
 	}
 	if n == 0 {
+		AllCoinType.SetReset(false) //设置成重置币种的状态
 		err = errors.New("操作失败")
 		return
 	}
 	//重新初始化币种信息
-	AllCoinType.Init()
+	err = AllCoinType.Init()
+	if err != nil {
+		AllCoinType.SetReset(false) //设置成重置币种的状态
+		return
+	}
 	return
 }
 

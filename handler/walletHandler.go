@@ -7,7 +7,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
-	"user/config"
+	"wallet/config"
 	"wallet/model"
 	"wallet/redis"
 )
@@ -19,7 +19,11 @@ type Wallet struct {
 }
 
 func (w *Wallet) Serve(ctx *faygo.Context) error {
-
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("返回当前各个币种的各项信息收益接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	err := ctx.BindForm(w)
 	if err != nil {
 		return jsonReturn(ctx, 0, "参数解析出错")
@@ -28,6 +32,7 @@ func (w *Wallet) Serve(ctx *faygo.Context) error {
 	if w.Token == "" || w.Device_code == "" {
 		return jsonReturn(ctx, 0, "参数不能为空")
 	}
+	return_data := make(map[string]interface{})
 
 	//通过用户token获取用户信息
 	user, err := NewUser(w.Token)
@@ -38,10 +43,19 @@ func (w *Wallet) Serve(ctx *faygo.Context) error {
 		return jsonReturn(ctx, 2, err.Error())
 	}
 	uid := user.GetUidByToken()
+	res := uid
+	res_data, err := redis.New().Get(res)
+	if err == nil {
+		err = json.Unmarshal([]byte(res_data), &return_data)
+		if err != nil {
+			return jsonReturn(ctx, 0, "服务器出错")
+		}
+		return jsonReturn(ctx, 200, return_data)
+	}
 	//获取设备信息
 	device, err := model.NewDeviceByCode(w.Device_code)
 	if err != nil {
-		jsonReturn(ctx, 0, err.Error())
+		return jsonReturn(ctx, 0, err.Error())
 	}
 
 	//判断是否是上一次在该设备上登陆的，如果不是，则绑定现在的uid，并且将之前的那个uid对应的挖矿程序结束掉
@@ -58,7 +72,7 @@ func (w *Wallet) Serve(ctx *faygo.Context) error {
 	}
 	//获取各种币种信息
 	//获取各种币
-	return_data := make(map[string]interface{})
+
 	coinTypeList := model.AllCoinType.GetAllInfoList()
 	dataList := []interface{}{}
 	for _, v := range coinTypeList {
@@ -107,6 +121,11 @@ func (w *Wallet) Serve(ctx *faygo.Context) error {
 	ALlCal.SetCal(uid, cal)
 	//算力
 	return_data["calculation"] = cal
+	b, err := json.Marshal(return_data)
+	if err != nil {
+		return jsonReturn(ctx, 0, "服务器出错")
+	}
+	redis.New().Set(res, string(b), 300)
 	return jsonReturn(ctx, 200, return_data)
 }
 
@@ -129,6 +148,11 @@ type Book struct {
 }
 
 func (b *Book) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("获取账本接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	err := ctx.BindForm(b)
 	if err != nil {
 		return jsonReturn(ctx, 0, "参数解析出错")
@@ -202,6 +226,11 @@ type Receive_profit struct {
 }
 
 func (r *Receive_profit) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("领取接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	err := ctx.BindForm(r)
 	if err != nil {
 		return jsonReturn(ctx, 0, "参数解析出错")
@@ -233,6 +262,8 @@ func (r *Receive_profit) Serve(ctx *faygo.Context) error {
 	if err != nil {
 		return jsonReturn(ctx, 0, err.Error())
 	}
+	res := uid
+	redis.New().Del(res)
 	return jsonReturn(ctx, 200, "领取成功")
 }
 
@@ -258,6 +289,11 @@ type Transfer struct {
 }
 
 func (t *Transfer) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("转出接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	err := ctx.BindForm(t)
 	if err != nil {
 		return jsonReturn(ctx, 0, "参数解析出错")
@@ -391,6 +427,11 @@ type GetPoundage struct {
 }
 
 func (g *GetPoundage) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("获取手续费接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	err := ctx.BindForm(g)
 	if err != nil {
 		return jsonReturn(ctx, 0, "不存在的币种类型")
@@ -447,6 +488,11 @@ type Feedback struct {
 }
 
 func (f *Feedback) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("意见反馈接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	err := ctx.BindForm(f)
 	if err != nil {
 		return jsonReturn(ctx, 0, "参数解析出错")
@@ -483,6 +529,11 @@ type PowerRecord struct {
 }
 
 func (p *PowerRecord) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("返回算力提升记录接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	err := ctx.BindForm(p)
 	if err != nil {
 		return jsonReturn(ctx, 0, "参数解析出错")
@@ -530,13 +581,14 @@ type GetPrice struct {
 }
 
 func (g *GetPrice) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("获取币种价格接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	//获取缓存中的数据
 	data, err := redis.New().Get(fmt.Sprintf("price_$v", g.Coin))
 	if err != nil {
-		faygo.Debug(err)
-		return jsonReturn(ctx, 0, "服务器繁忙")
-	}
-	if data == "" {
 		data, err = model.GetPrice(g.Coin)
 		if err != nil {
 			return jsonReturn(ctx, 0, err.Error())
@@ -546,4 +598,22 @@ func (g *GetPrice) Serve(ctx *faygo.Context) error {
 	}
 	return jsonReturn(ctx, 200, data)
 
+}
+
+//添加设备码的接口
+type AddDeviceCode struct {
+	Code         string `param:"<in:formData><required><name:code>"`
+	Another_code string `param:"<in:formData><required><name:another_code>"`
+}
+
+func (a *AddDeviceCode) Serve(ctx *faygo.Context) error {
+	if err := ctx.BindForm(a); err != nil {
+		return jsonReturn(ctx, 0, err.Error())
+	}
+	device_model := new(model.Device)
+	err := device_model.Add(a.Code, a.Another_code)
+	if err != nil {
+		return jsonReturn(ctx, 0, err.Error())
+	}
+	return jsonReturn(ctx, 200, "添加成功")
 }

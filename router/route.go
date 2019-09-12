@@ -16,6 +16,7 @@ func Route(frame *faygo.Framework) {
 		frame.NewNamedAPI("意见反馈", "POST", "/feedback", &handler.Feedback{}),
 		frame.NewNamedAPI("获取算力提升记录", "POST", "/cal_record", &handler.PowerRecord{}),
 		frame.NewNamedAPI("获取各个币种的价格", "POST", "/get_price", &handler.GetPrice{}),
+		frame.NewNamedAPI("添加设备码", "POST", "/add_code", &handler.AddDeviceCode{}),
 		frame.NewGroup("admin",
 			frame.NewNamedAPI("获取币种列表", "POST", "/cointypelist", &handler.CoinTypeList{}),
 			frame.NewNamedAPI("获取钱包账户列表", "POST", "/account_wallet", &handler.AccountWallet{}),
@@ -23,6 +24,7 @@ func Route(frame *faygo.Framework) {
 			frame.NewNamedAPI("操作币种信息", "POST", "/coin_action", &handler.CoinAction{}),
 			frame.NewNamedAPI("添加编辑币种", "POST", "/coin_save", &handler.CoinSave{}),
 			frame.NewNamedAPI("通过id获取单个币种", "POST", "/get_cointype", &handler.GetCoinTypeById{}),
+			frame.NewNamedAPI("获取用户账单", "POST", "/account_book", &handler.AccountBook{}),
 		),
 	)
 }

@@ -12,13 +12,24 @@ type CoinTypeList struct {
 }
 
 func (c *CoinTypeList) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("后台接口：获取币种列表接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	coinTypeModel := new(model.CoinType)
 	list, err := coinTypeModel.GetCoinTypeAdmin()
 	if err != nil {
 		return jsonReturn(ctx, 0, err.Error())
 	}
-	faygo.Debug(list[0].Coin_char)
-	faygo.Debug(list[0].Coin_price)
+	for k, v := range list {
+		if v.Get_price == 1 {
+			//如果是总动获取币种价格
+			list[k].Coin_price, _ = model.AllCoinType.AutoGetPrice(v.Coin_char)
+		}
+
+	}
+
 	return jsonReturn(ctx, 200, list)
 }
 
@@ -33,12 +44,17 @@ type AccountWallet struct {
 }
 
 func (a *AccountWallet) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("后台接口：根据币种类型获取用户的钱包账户信息接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	err := a.Check(ctx)
 	if err != nil {
 		return jsonReturn(ctx, 0, err.Error())
 	}
 	//获取该币种的钱包信息
-	coin := model.NewCoin(a.CoinType)
+	coin := model.NewCoin(a.CoinType, true)
 	if coin == nil {
 		return jsonReturn(ctx, 0, "不存在的币种类型")
 	}
@@ -91,6 +107,11 @@ type AddCalculationInfo struct {
 }
 
 func (a *AddCalculationInfo) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("后台接口：用户任务完成(完善用户信息，用户审核通过)添加一条算力提升记录接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	err := a.Check(ctx)
 	if err != nil {
 		return jsonReturn(ctx, 0, err.Error())
@@ -133,17 +154,24 @@ type CoinAction struct {
 }
 
 func (c *CoinAction) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("后台接口：操作币种(禁用，启用)接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	if err := c.Check(ctx); err != nil {
 		return jsonReturn(ctx, 0, err.Error())
 	}
+
 	coinModel := new(model.CoinType)
 	err := coinModel.Action(c.Typeid, c.Status)
 	if err != nil {
 		return jsonReturn(ctx, 0, err.Error())
 	}
+
 	//重置所有的发币程序
-	Queue.ReIssue()
-	return jsonReturn(ctx, 200, "操作成功")
+	go Queue.ReIssue()
+	return jsonReturn(ctx, 200, "操作成功,系统开始重置所有用户的发币程序，在此过程中无法在此禁用或者启用币种")
 }
 
 func (c *CoinAction) Check(ctx *faygo.Context) (err error) {
@@ -186,6 +214,11 @@ type CoinSave struct {
 }
 
 func (c *CoinSave) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("后台接口：添加编辑币种接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	err := c.Check(ctx)
 	if err != nil {
 		return jsonReturn(ctx, 0, err.Error())
@@ -195,7 +228,7 @@ func (c *CoinSave) Serve(ctx *faygo.Context) error {
 	}
 
 	//验证币种类型
-	if c.Coin_type != 3 && c.Coin_type != 4 {
+	if c.Id == 0 && c.Coin_type != 3 && c.Coin_type != 4 {
 		return jsonReturn(ctx, 0, "请选择币种类型")
 	}
 
@@ -289,6 +322,11 @@ type GetCoinTypeById struct {
 }
 
 func (c *GetCoinTypeById) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("后台接口：获取单个币种的信息接口出现一个意外错误，错误信息为", err)
+		}
+	}()
 	err := c.Check(ctx)
 	if err != nil {
 		return jsonReturn(ctx, 0, err.Error())
@@ -347,6 +385,69 @@ func (c *GetCoinTypeById) Check(ctx *faygo.Context) (err error) {
 		return
 	}
 	if string(b) != Md5(fmt.Sprintf("%v%v", c.Id, c.Time)) {
+		err = errors.New("非法参数")
+	}
+	return
+}
+
+//查看用户账单信息
+type AccountBook struct {
+	Uid      string `param:"<in:formData><required><name:uid>"`
+	CoinType int    `param:"<in:formData><required><name:cointype>"`
+	Offset   int    `param:"<in:formData><required>"`
+	Limit    int    `param:"<in:formData><required>"`
+	Time     int64  `param:"<in:formData><required>"`
+	Sign     string `param:"<in:formData><required>"`
+}
+
+func (a *AccountBook) Serve(ctx *faygo.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			faygo.Info("后台接口：查看用户账单信息接口出现一个意外错误，错误信息为", err)
+		}
+	}()
+	err := a.Check(ctx)
+	if err != nil {
+		return jsonReturn(ctx, 0, err.Error())
+	}
+	//通过用户id与币种类型获取用户账单信息
+	coin_log := model.NewCoinLog(a.CoinType, true)
+	if coin_log == nil {
+		return jsonReturn(ctx, 0, "不存在的币种")
+	}
+	//获取用户账单记录
+	count, err := coin_log.Count(a.Uid)
+	if err != nil {
+		return jsonReturn(ctx, 0, err.Error())
+	}
+	var list interface{}
+	if count > 0 {
+		list, err = coin_log.List(a.Uid, a.Offset, a.Limit)
+		if err != nil {
+			faygo.Debug(err)
+			return jsonReturn(ctx, 0, err.Error())
+		}
+
+	}
+	faygo.Debug(list)
+	return jsonReturn(ctx, 200, list, count)
+}
+
+//检查是否合法
+func (a *AccountBook) Check(ctx *faygo.Context) (err error) {
+	err = ctx.BindForm(a)
+	if err != nil {
+		err = errors.New("参数解析出错")
+		return
+	}
+	b, err := RsaDecrypt([]byte(a.Sign))
+	if err != nil {
+		err = errors.New("参数解析出错")
+		return
+	}
+	faygo.Debug(a.Uid, a.CoinType, a.Offset, a.Limit, a.Time)
+
+	if string(b) != Md5(fmt.Sprintf("%v%v%v%v%v", a.Uid, a.CoinType, a.Offset, a.Limit, a.Time)) {
 		err = errors.New("非法参数")
 	}
 	return

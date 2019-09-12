@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"user/config"
+	"wallet/config"
 	"wallet/redis"
 )
 
@@ -23,6 +23,7 @@ type coin_type struct {
 	coinInfoById map[int]*CoinType    //以币种类型id为key
 	coinList     []*CoinType
 	auto_price   chan int //控制是否退出自动获取价格的协助程序
+	is_reset     bool     //是否处于重置币种信息 1为处于重置的状态，0处于未重置的状态
 }
 
 var AllCoinType *coin_type
@@ -41,6 +42,7 @@ func init() {
 	}
 	//初始化根据币种类型自动构造各种币的表
 	coinTypeList := AllCoinType.GetAllInfo()
+
 	for _, v := range coinTypeList {
 		NewCoin(v.Id).createTab()
 		NewCoinLog(v.Id).createTab()
@@ -50,6 +52,20 @@ func init() {
 			NewTrade(v.Id).createTab()
 		}
 	}
+}
+
+//设置是否处于重置币种
+func (c *coin_type) SetReset(b bool) {
+	c.l.Lock()
+	defer c.l.Unlock()
+	c.is_reset = b
+}
+
+//获取是否重置币种的状态
+func (c *coin_type) GetResetStatus() bool {
+	c.l.Lock()
+	defer c.l.Unlock()
+	return c.is_reset
 }
 
 //获取某种币种的信息
@@ -106,6 +122,11 @@ func (c *coin_type) Init() (err error) {
 			typelist[k].Coin_price, _ = Tofix(price, 2)
 			//定时获取价格
 			go func(coin_type *CoinType, close_chan chan int) {
+				defer func() {
+					if err := recover(); err != nil {
+						faygo.Info("定时获取币种价格的协程出错，错误信息为", err)
+					}
+				}()
 				tick := time.NewTicker(time.Minute * 5)
 				for {
 					select {
@@ -127,7 +148,6 @@ func (c *coin_type) Init() (err error) {
 	if c.auto_price != nil {
 		close(c.auto_price) //关闭之前自动获取价格的协程
 	}
-	faygo.Debug(typelist[0])
 	c.auto_price = auto_chan
 	return
 }
@@ -146,10 +166,7 @@ func (c *coin_type) GetOneCoinInfoByTypeid(typeid int) (coinType *CoinType) {
 //自动获取价格
 func (c *coin_type) AutoGetPrice(coin_char string) (price float64, err error) {
 	price_str, err := redis.New().Get(coin_char + "_price")
-	if err != nil {
-		return
-	}
-	if price_str != "" {
+	if err == nil {
 		price, _ = strconv.ParseFloat(price_str, 64)
 		return
 	}
@@ -181,7 +198,10 @@ func (c *coin_type) AutoGetPrice(coin_char string) (price float64, err error) {
 		err = errors.New("自动获取价格出错，获取不到data")
 		return
 	}
-	price_d := price_data.(map[string]interface{})
+	price_d, ok := price_data.(map[string]interface{})
+	if !ok {
+		err = errors.New("price_data数据格式出错")
+	}
 	quotes, ok := price_d["quotes"]
 	if !ok {
 		err = errors.New("自动获取价格出错，获取不到quotes")

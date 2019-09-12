@@ -64,19 +64,25 @@ func (q *queue) Issue(uid string) {
 		//给每个币种开协程进行发币
 		//跑出一个协程进行发币
 		go func(uid string, ch chan bool, coinType *model.CoinType) {
+			defer func() {
+				if err := recover(); err != nil {
+					faygo.Info("发币协程的协程出现意外错误，错误信息为", err, ",当前用户uid为", uid, ",当前发币币种为", coinType.Coin_char)
+				}
+			}()
 			//假设是5分钟发一次币
-			tick := time.NewTicker(time.Second * time.Duration(coinType.Issue_time))
+			//tick := time.NewTicker(time.Second * 5)
+			tick := time.NewTicker(time.Minute * time.Duration(coinType.Issue_time))
 			defer tick.Stop()
 			for {
 				select {
 				case <-tick.C:
 					//计算当前收益
-					faygo.Debug("当前的币种id为", coinType.Id)
+					//faygo.Debug("当前的币种id为", coinType.Id)
 					coin, err := getProfit(uid, coinType.Id)
 					if err != nil {
 						continue
 					}
-					//faygo.Debug("当前发的收益为：", coin)
+					faygo.Debug("当前发的收益为：", coin, ",币种类型为", coinType.Coin_char)
 					//到了发币的时间,将要发的币的放到队列中（串型化，避免数据库阻塞）
 					p := new(profit)
 					p.typeid = coinType.Id
@@ -115,6 +121,7 @@ func (q *queue) ReIssue() bool {
 		//重新载入发币程序
 		q.Issue(uid)
 	}
+	model.AllCoinType.SetReset(false) //重置完成，设置成可重置
 	return true
 }
 

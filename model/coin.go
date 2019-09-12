@@ -15,22 +15,34 @@ import (
 
 type coin struct {
 	Uid            string  `xorm:"not null unique default('') char(20) comment('用户uid')"`
-	Profit         float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('累计收益')"`
-	Receive_profit float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('可领取的收益')"`
-	Balance        float64 `xorm:"not null default(0.00000000) decimal(10,8) comment('余额')"`
+	Profit         float64 `xorm:"not null default(0.00000000) decimal(18,8) comment('累计收益')"`
+	Receive_profit float64 `xorm:"not null default(0.00000000) decimal(18,8) comment('可领取的收益')"`
+	Balance        float64 `xorm:"not null default(0.00000000) decimal(18,8) comment('余额')"`
+	Update_time    int64   `xorm:"not null default(0) int(11) comment('最后一次领取的时间')"`
 	tableName      string  `xorm:"-"`
 	tableLogName   string  `xorm:"-"`
 	coinType       int     `xorm:"-"`
 }
 
 //构造函数
-func NewCoin(typeid int) (c *coin) {
+func NewCoin(typeid int, find_tab ...bool) (c *coin) {
 	c = new(coin)
 	c.coinType = typeid
-	coinType := AllCoinType.GetOneCoinInfoByTypeid(typeid)
-	if coinType == nil {
-		return nil
+
+	var coinType *CoinType
+	if len(find_tab) == 0 {
+		coinType = AllCoinType.GetOneCoinInfoByTypeid(typeid)
+		if coinType == nil {
+			return nil
+		}
+	} else {
+		var err error
+		coinType, err = new(CoinType).GetCoinTypeById(typeid)
+		if err != nil {
+			return nil
+		}
 	}
+
 	c.setTableName(coinType.Coin_char)
 
 	return
@@ -77,7 +89,7 @@ func (c *coin) Receive(uid string) (err error) {
 	//查询出可领取的数目
 	var receive float64
 	co := new(coin)
-	has, err := sess.Table(c.tableName).Where("uid=?", uid).Cols("receive_profit", "balance").Get(co)
+	has, err := sess.Table(c.tableName).Where("uid=?", uid).Cols("receive_profit", "balance", "update_time").Get(co)
 	if err != nil {
 		err = SystemFail
 		sess.Rollback()
@@ -92,12 +104,13 @@ func (c *coin) Receive(uid string) (err error) {
 	receive = co.Receive_profit
 	balance := co.Balance
 	if receive == 0 {
+		err = errors.New("没有可领取的收益")
 		sess.Rollback()
 		return
 	}
 
 	//扣除数目,并且增加余额
-	res, err := sess.Exec("update "+c.tableName+" set receive_profit=receive_profit-?,balance=balance+? where uid=?", receive, receive, uid)
+	res, err := sess.Exec("update "+c.tableName+" set receive_profit=receive_profit-?,balance=balance+?,update_time=? where uid=? and update_time=?", receive, receive, time.Now().Unix(), uid, co.Update_time)
 	if err != nil {
 		err = SystemFail
 		sess.Rollback()
@@ -112,7 +125,7 @@ func (c *coin) Receive(uid string) (err error) {
 
 	//增加一条领取记录
 	coinlog := NewCoinLog(c.coinType)
-	err = coinlog.setTableName(c.tableLogName).AddLog(sess, uid, 1, receive, balance+receive)
+	err = coinlog.setTableName(c.tableLogName).AddLog(sess, uid, 1, receive, balance+receive, "")
 	if err != nil {
 		sess.Rollback()
 		err = SystemFail
@@ -170,13 +183,14 @@ func (c *coin) create(uid string) (err error) {
 }
 
 //币种返还余额度
-func (c *coin) ReturnProfit(id, tradeid int, uid string, num float64) {
+func (c *coin) ReturnProfit(id, tradeid int, uid string, num float64, addr string) {
 	coinType := AllCoinType.GetOneCoinInfoByTypeid(c.coinType)
 	if coinType == nil {
 		return
 	}
 	engine := xorm.MustDB()
 	sess := engine.NewSession()
+	defer sess.Close()
 	err := sess.Begin()
 	_, err = sess.Exec("update "+c.tableName+" set balance=balance+? where uid=?", num, uid)
 	if err != nil {
@@ -220,17 +234,11 @@ func (c *coin) ReturnProfit(id, tradeid int, uid string, num float64) {
 	}
 	//增加一条返还失败返还记录
 	coinLog := NewCoinLog(coinType.Id)
-	coinLog.Num = num
-	coinLog.Typeid = 3
-	coinLog.Uid = uid
-	coinLog.Balance = balance
-	coinLog.Time = time.Now().Unix()
-	n, err = sess.Table(coinLog.tableName).Insert(coinLog)
-	if err != nil || n == 0 {
+	err = coinLog.AddLog(sess, uid, 3, num, balance, addr)
+	if err != nil {
 		sess.Rollback()
 		return
 	}
-
 	sess.Commit()
 
 }

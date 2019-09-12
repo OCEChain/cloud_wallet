@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"user/config"
+	"wallet/config"
 )
 
 /*

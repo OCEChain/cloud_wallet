@@ -68,6 +68,7 @@ func (f *fee) Get(typeid int) (res string) {
 //开启协程
 func init() {
 	go func() {
+
 		//程序一启动,从redis队列中读取那些去要转账的账单进行转账
 		c := redis.Consumer("coin_transfer", 1)
 
@@ -77,6 +78,11 @@ func init() {
 			ch := make(chan model.Trade)
 			transfer_chan[i] = ch
 			go func(ch chan model.Trade, i int) {
+				defer func() {
+					if err := recover(); err != nil {
+						faygo.Info("负责从队列中获取转账信息进行转账的协程出现意外错误，错误信息为", err)
+					}
+				}()
 				for {
 					trade_data := <-ch
 					//查询出该记录
@@ -142,7 +148,11 @@ func init() {
 	faygo.Debug(id)
 	//定时将执行失败的记录中的额度返还
 	go func() {
-
+		defer func() {
+			if err := recover(); err != nil {
+				faygo.Info("定时将执行失败的记录中的额度返还的协程出现意外错误，错误信息为", err)
+			}
+		}()
 		tick := time.NewTicker(time.Second * 10)
 		for {
 			select {
@@ -158,6 +168,12 @@ func init() {
 	}()
 
 	go func() {
+
+		defer func() {
+			if err := recover(); err != nil {
+				faygo.Info("定时获取两种币的手续费的协程出现意外错误，错误信息为", err)
+			}
+		}()
 		//程序启动先获取两种币的手续费
 		res, err := model.GetPoundage(1)
 		if err != nil {
@@ -192,7 +208,11 @@ func init() {
 	//开启一个协程，定时去将数据库中小于当前需要转账id的未确认记录拿出来重新执行一遍(避免执行失败后，将记录标记ok为2失败，重新执行）
 
 	go func() {
-
+		defer func() {
+			if err := recover(); err != nil {
+				faygo.Info("将数据库中小于当前需要转账id的未确认记录拿出来重新执行一遍的协程出现意外错误，错误信息为", err)
+			}
+		}()
 		tick := time.NewTicker(time.Second * 10)
 		for {
 			select {
